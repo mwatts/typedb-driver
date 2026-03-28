@@ -38,6 +38,8 @@ pub struct TypeDBDriver {
     database_manager: DatabaseManager,
     user_manager: UserManager,
     background_runtime: Arc<BackgroundRuntime>,
+    #[cfg(feature = "embedded")]
+    embedded_state: Option<crate::embedded::embedded_backend::EmbeddedState>,
 }
 
 impl TypeDBDriver {
@@ -127,7 +129,14 @@ impl TypeDBDriver {
         debug!("Created database manager and user manager");
 
         debug!("TypeDB driver initialization completed successfully");
-        Ok(Self { server_manager, database_manager, user_manager, background_runtime })
+        Ok(Self {
+            server_manager,
+            database_manager,
+            user_manager,
+            background_runtime,
+            #[cfg(feature = "embedded")]
+            embedded_state: None,
+        })
     }
 
     /// Checks it this connection is opened.
@@ -342,6 +351,20 @@ impl TypeDBDriver {
             async move { server_connection.open_transaction(database_name, transaction_type, options).await }
         };
 
+        #[cfg(feature = "embedded")]
+        if let Some(ref embedded_state) = self.embedded_state {
+            let database = embedded_state
+                .database_manager
+                .database(database_name)
+                .ok_or_else(|| {
+                    Error::Other(format!("Database '{}' not found", database_name))
+                })?;
+            let embedded_tx =
+                crate::embedded::embedded_backend::EmbeddedTransaction::open(database, transaction_type)?;
+            debug!("Successfully opened embedded transaction for database: {}", database_name);
+            return Ok(Transaction::new_embedded(embedded_tx));
+        }
+
         debug!("Opening transaction for database: {} with type: {:?}", database_name, transaction_type);
         let transaction_stream = self.server_manager.execute(ServerRouting::Auto, open_fn).await?;
 
@@ -368,6 +391,66 @@ impl TypeDBDriver {
             Err(e) => error!("Failed to close TypeDB driver connection: {}", e),
         }
         close_result
+    }
+
+    /// Creates a new embedded (in-process) TypeDB driver.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` -- The data directory path for the embedded database
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// TypeDBDriver::new_embedded("/tmp/typedb-data")
+    /// ```
+    #[cfg(feature = "embedded")]
+    pub fn new_embedded(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        use crate::embedded::embedded_backend::EmbeddedState;
+
+        let data_directory = path.as_ref().to_owned();
+        if !data_directory.exists() {
+            std::fs::create_dir_all(&data_directory).map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create data directory '{}': {}",
+                    data_directory.display(),
+                    e
+                ))
+            })?;
+        }
+
+        let database_manager = database::database_manager::DatabaseManager::new(&data_directory)
+            .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
+
+        let embedded_state = EmbeddedState {
+            database_manager,
+            data_directory,
+        };
+
+        // Create a minimal driver with embedded state.
+        // The gRPC fields are not used in embedded mode, but we need a valid BackgroundRuntime.
+        let background_runtime = Arc::new(crate::connection::runtime::BackgroundRuntime::new()?);
+        let server_manager =
+            Arc::new(crate::connection::server::server_manager::ServerManager::new_embedded_placeholder(
+                background_runtime.clone(),
+            ));
+
+        Ok(Self {
+            server_manager: server_manager.clone(),
+            database_manager: DatabaseManager::new(server_manager.clone())
+                .map_err(|e| Error::Other(format!("Failed to create placeholder DatabaseManager: {e}")))?,
+            user_manager: UserManager::new(server_manager),
+            background_runtime,
+            embedded_state: Some(embedded_state),
+        })
+    }
+
+    /// Returns the embedded database manager, if this is an embedded driver.
+    #[cfg(feature = "embedded")]
+    pub fn embedded_databases(
+        &self,
+    ) -> Option<&Arc<database::database_manager::DatabaseManager>> {
+        self.embedded_state.as_ref().map(|s| &s.database_manager)
     }
 }
 

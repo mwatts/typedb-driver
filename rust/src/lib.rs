@@ -50,5 +50,7 @@ pub mod concept;
 mod connection;
 mod database;
 pub mod driver;
+#[cfg(feature = "embedded")]
+pub(crate) mod embedded;
 pub mod transaction;
 mod user;

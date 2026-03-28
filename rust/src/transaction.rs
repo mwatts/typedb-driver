@@ -25,17 +25,23 @@ use crate::{
     Error, QueryOptions, TransactionOptions,
     analyze::AnalyzedQuery,
     answer::QueryAnswer,
-    common::{Promise, Result, TransactionType},
+    common::{BoxPromise, Promise, Result, TransactionType},
     connection::TransactionStream,
 };
 
+enum TransactionInner {
+    Grpc(Pin<Box<TransactionStream>>),
+    #[cfg(feature = "embedded")]
+    Embedded(std::sync::Mutex<crate::embedded::embedded_backend::EmbeddedTransaction>),
+}
+
 /// A transaction with a TypeDB database.
 pub struct Transaction {
-    /// The transaction’s type (READ or WRITE)
+    /// The transaction's type (READ or WRITE)
     type_: TransactionType,
     /// The options for the transaction
     options: TransactionOptions,
-    transaction_stream: Pin<Box<TransactionStream>>,
+    inner: TransactionInner,
 }
 
 impl Transaction {
@@ -44,7 +50,29 @@ impl Transaction {
         Transaction {
             type_: transaction_stream.type_(),
             options: transaction_stream.options().clone(),
-            transaction_stream,
+            inner: TransactionInner::Grpc(transaction_stream),
+        }
+    }
+
+    #[cfg(feature = "embedded")]
+    pub(super) fn new_embedded(
+        embedded_tx: crate::embedded::embedded_backend::EmbeddedTransaction,
+    ) -> Self {
+        let type_ = embedded_tx.type_();
+        Transaction {
+            type_,
+            options: TransactionOptions::new(),
+            inner: TransactionInner::Embedded(std::sync::Mutex::new(embedded_tx)),
+        }
+    }
+
+    fn grpc_stream(&self) -> &TransactionStream {
+        match &self.inner {
+            TransactionInner::Grpc(stream) => stream,
+            #[cfg(feature = "embedded")]
+            TransactionInner::Embedded(_) => {
+                panic!("Expected gRPC transaction but found embedded transaction")
+            }
         }
     }
 
@@ -56,18 +84,24 @@ impl Transaction {
     /// transaction.is_open()
     /// ```
     pub fn is_open(&self) -> bool {
-        self.transaction_stream.is_open()
+        match &self.inner {
+            TransactionInner::Grpc(stream) => stream.is_open(),
+            #[cfg(feature = "embedded")]
+            TransactionInner::Embedded(tx) => tx.lock().unwrap().is_open(),
+        }
     }
 
     /// Performs a TypeQL query with default options.
     /// See [`Transaction::query_with_options`]
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// transaction.query(query)
-    /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn query(&self, query: impl AsRef<str>) -> impl Promise<'static, Result<QueryAnswer>> {
+        self.query_with_options(query, QueryOptions::new())
+    }
+
+    /// Performs a TypeQL query with default options.
+    /// See [`Transaction::query_with_options`]
+    #[cfg(feature = "embedded")]
+    pub fn query(&self, query: impl AsRef<str>) -> BoxPromise<'static, Result<QueryAnswer>> {
         self.query_with_options(query, QueryOptions::new())
     }
 
@@ -75,14 +109,15 @@ impl Transaction {
     ///
     /// # Arguments
     ///
-    /// * `query` — The TypeQL query to be executed
-    /// * `options` — The QueryOptions to execute the query with
+    /// * `query` -- The TypeQL query to be executed
+    /// * `options` -- The QueryOptions to execute the query with
     ///
     /// # Examples
     ///
     /// ```rust
     /// transaction.query_with_options(query, options)
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn query_with_options(
         &self,
         query: impl AsRef<str>,
@@ -90,7 +125,27 @@ impl Transaction {
     ) -> impl Promise<'static, Result<QueryAnswer>> {
         let query = query.as_ref();
         debug!("Transaction submitting query: {}", query);
-        self.transaction_stream.query(query, options)
+        self.grpc_stream().query(query, options)
+    }
+
+    /// Performs a TypeQL query in this transaction.
+    #[cfg(feature = "embedded")]
+    pub fn query_with_options(
+        &self,
+        query: impl AsRef<str>,
+        options: QueryOptions,
+    ) -> BoxPromise<'static, Result<QueryAnswer>> {
+        let query = query.as_ref();
+        debug!("Transaction submitting query: {}", query);
+        match &self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.query(query, options))
+            }
+            TransactionInner::Embedded(tx) => {
+                let result = tx.lock().unwrap().query(query, options);
+                crate::common::box_promise(crate::promisify! { result })
+            }
+        }
     }
 
     /// Analyzes a TypeQL query in this transaction,
@@ -98,18 +153,34 @@ impl Transaction {
     ///
     /// # Arguments
     ///
-    /// * `query` — The TypeQL query to be analyzed
+    /// * `query` -- The TypeQL query to be analyzed
     ///
     /// # Examples
     ///
     /// ```rust
     /// transaction.analyze(query)
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn analyze(&self, query: impl AsRef<str>) -> impl Promise<'static, Result<AnalyzedQuery>> {
-        self.transaction_stream.analyze(query.as_ref())
+        self.grpc_stream().analyze(query.as_ref())
     }
 
-    /// Retrieves the transaction’s type (READ or WRITE).
+    /// Analyzes a TypeQL query in this transaction.
+    #[cfg(feature = "embedded")]
+    pub fn analyze(&self, query: impl AsRef<str>) -> BoxPromise<'static, Result<AnalyzedQuery>> {
+        match &self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.analyze(query.as_ref()))
+            }
+            TransactionInner::Embedded(_) => {
+                crate::common::box_promise(crate::promisify! {
+                    Err(Error::Other("Analyze is not supported for embedded transactions".to_string()))
+                })
+            }
+        }
+    }
+
+    /// Retrieves the transaction's type (READ or WRITE).
     pub fn type_(&self) -> TransactionType {
         self.type_
     }
@@ -119,18 +190,36 @@ impl Transaction {
     ///
     /// # Arguments
     ///
-    /// * `function` — The callback function.
+    /// * `function` -- The callback function.
     ///
     /// # Examples
     ///
     /// ```rust
     /// transaction.on_close(function)
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn on_close(
         &self,
         callback: impl FnOnce(Option<Error>) + Send + Sync + 'static,
     ) -> impl Promise<'_, Result<()>> {
-        self.transaction_stream.on_close(callback)
+        self.grpc_stream().on_close(callback)
+    }
+
+    /// Registers a callback function which will be executed when this transaction is closed.
+    #[cfg(feature = "embedded")]
+    pub fn on_close(
+        &self,
+        callback: impl FnOnce(Option<Error>) + Send + Sync + 'static,
+    ) -> BoxPromise<'_, Result<()>> {
+        match &self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.on_close(callback))
+            }
+            TransactionInner::Embedded(_) => {
+                callback(None);
+                crate::common::box_promise(crate::promisify! { Ok(()) })
+            }
+        }
     }
 
     /// Closes the transaction and returns a resolvable promise
@@ -141,11 +230,27 @@ impl Transaction {
     #[cfg_attr(feature = "sync", doc = "transaction.close().resolve()")]
     #[cfg_attr(not(feature = "sync"), doc = "transaction.close().await")]
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn close(&self) -> impl Promise<'_, Result<()>> {
-        self.transaction_stream.close()
+        self.grpc_stream().close()
     }
 
-    /// Commits the changes made via this transaction to the TypeDB database. Whether or not the transaction is commited successfully, it gets closed after the commit call.
+    /// Closes the transaction.
+    #[cfg(feature = "embedded")]
+    pub fn close(&self) -> BoxPromise<'_, Result<()>> {
+        match &self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.close())
+            }
+            TransactionInner::Embedded(_) => {
+                // Embedded transactions are closed when dropped
+                crate::common::box_promise(crate::promisify! { Ok(()) })
+            }
+        }
+    }
+
+    /// Commits the changes made via this transaction to the TypeDB database.
+    /// Whether or not the transaction is committed successfully, it gets closed after the commit call.
     ///
     /// # Examples
     ///
@@ -153,9 +258,26 @@ impl Transaction {
     #[cfg_attr(feature = "sync", doc = "transaction.commit()")]
     #[cfg_attr(not(feature = "sync"), doc = "transaction.commit().await")]
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn commit(self) -> impl Promise<'static, Result> {
-        let stream = self.transaction_stream;
-        stream.commit()
+        match self.inner {
+            TransactionInner::Grpc(stream) => stream.commit(),
+        }
+    }
+
+    /// Commits the changes made via this transaction.
+    #[cfg(feature = "embedded")]
+    pub fn commit(self) -> BoxPromise<'static, Result> {
+        match self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.commit())
+            }
+            TransactionInner::Embedded(tx) => {
+                let embedded_tx = tx.into_inner().unwrap();
+                let result = embedded_tx.commit();
+                crate::common::box_promise(crate::promisify! { result })
+            }
+        }
     }
 
     /// Rolls back the uncommitted changes made via this transaction.
@@ -166,8 +288,23 @@ impl Transaction {
     #[cfg_attr(feature = "sync", doc = "transaction.rollback()")]
     #[cfg_attr(not(feature = "sync"), doc = "transaction.rollback().await")]
     /// ```
+    #[cfg(not(feature = "embedded"))]
     pub fn rollback(&self) -> impl Promise<'_, Result> {
-        self.transaction_stream.rollback()
+        self.grpc_stream().rollback()
+    }
+
+    /// Rolls back the uncommitted changes made via this transaction.
+    #[cfg(feature = "embedded")]
+    pub fn rollback(&self) -> BoxPromise<'_, Result> {
+        match &self.inner {
+            TransactionInner::Grpc(stream) => {
+                crate::common::box_promise(stream.rollback())
+            }
+            TransactionInner::Embedded(tx) => {
+                let result = tx.lock().unwrap().rollback();
+                crate::common::box_promise(crate::promisify! { result })
+            }
+        }
     }
 }
 

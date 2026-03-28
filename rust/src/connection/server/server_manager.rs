@@ -106,6 +106,23 @@ impl ServerManager {
         Ok(server_manager)
     }
 
+    /// Creates a placeholder `ServerManager` with no active connections, for use by the embedded
+    /// driver where gRPC server connections are not needed.
+    #[cfg(feature = "embedded")]
+    pub(crate) fn new_embedded_placeholder(background_runtime: Arc<BackgroundRuntime>) -> Self {
+        Self {
+            configured_addresses: Addresses::Direct(vec![]),
+            replicas: RwLock::new(HashSet::new()),
+            replica_connections: RwLock::new(HashMap::new()),
+            address_translation: RwLock::new(AddressTranslation::Mapping(HashMap::new())),
+            background_runtime,
+            credentials: crate::Credentials::new("embedded", ""),
+            driver_options: DriverOptions::default(),
+            driver_lang: "rust".to_string(),
+            driver_version: "0.0.0".to_string(),
+        }
+    }
+
     pub(crate) fn driver_options(&self) -> &DriverOptions {
         &self.driver_options
     }
