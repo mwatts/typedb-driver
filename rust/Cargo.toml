@@ -125,14 +125,17 @@
 	[dependencies.database]
 		path = "../../typedb/database"
 		optional = true
+		default-features = false
 
 	[dependencies.kv]
 		path = "../../typedb/kv"
 		optional = true
+		default-features = false
 
 	[dependencies.storage]
 		path = "../../typedb/storage"
 		optional = true
+		default-features = false
 
 	[dependencies.executor]
 		path = "../../typedb/executor"
