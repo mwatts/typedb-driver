@@ -188,6 +188,11 @@
 		optional = true
 
 [[test]]
+	path = "tests/integration/embedded.rs"
+	name = "test_embedded"
+	required-features = ["embedded"]
+
+[[test]]
 	path = "tests/integration/driver.rs"
 	name = "test_driver"
 
