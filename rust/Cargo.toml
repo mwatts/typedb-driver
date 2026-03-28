@@ -7,6 +7,8 @@
 	sync = []
 	embedded = [
 		"dep:database",
+		"dep:kv",
+		"database/redb",
 		"dep:storage",
 		"dep:executor",
 		"dep:query",
@@ -122,6 +124,10 @@
 	# Engine dependencies (optional, for embedded feature)
 	[dependencies.database]
 		path = "../../typedb/database"
+		optional = true
+
+	[dependencies.kv]
+		path = "../../typedb/kv"
 		optional = true
 
 	[dependencies.storage]

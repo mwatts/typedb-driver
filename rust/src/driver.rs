@@ -419,7 +419,10 @@ impl TypeDBDriver {
             })?;
         }
 
-        let database_manager = database::database_manager::DatabaseManager::new(&data_directory)
+        let database_manager = database::database_manager::DatabaseManager::new_with_backend(
+                &data_directory,
+                kv::KVBackend::Redb,
+            )
             .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
 
         let embedded_state = EmbeddedState {
