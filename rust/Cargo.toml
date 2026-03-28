@@ -24,6 +24,7 @@
 		"dep:typeql",
 		"dep:engine-logger",
 		"dep:vector",
+		"dep:fulltext",
 	]
 
 [package]
@@ -209,6 +210,12 @@
 		optional = true
 
 	[dependencies.vector]
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
+		optional = true
+		default-features = false
+
+	[dependencies.fulltext]
 		git = "https://github.com/mwatts/typedb"
 		branch = "thyra"
 		optional = true

@@ -166,4 +166,5 @@
 	lending_iterator = { path = "../typedb/common/lending_iterator" }
 	logger = { path = "../typedb/common/logger" }
 	vector = { path = "../typedb/vector" }
+	fulltext = { path = "../typedb/fulltext" }
 

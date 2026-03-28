@@ -489,3 +489,55 @@ fn embedded_vector_persistence() {
         cleanup(&dir);
     });
 }
+
+// ─── Full-Text Search ─────────────────────────────────────────────
+
+#[test]
+fn embedded_fts_search() {
+    async_std::task::block_on(async {
+        let dir = test_dir("fts");
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            driver.fts_index("test", "content", "doc1", "the quick brown fox").unwrap();
+            driver.fts_index("test", "content", "doc2", "cats and dogs").unwrap();
+            driver.fts_index("test", "content", "doc3", "the fox is clever").unwrap();
+
+            let results = driver.fts_search("test", "content", "quick fox", 2).unwrap();
+            assert_eq!(results.len(), 2);
+            let ids: Vec<&str> = results.iter().map(|r| r.entity_id.as_str()).collect();
+            assert!(ids.contains(&"doc1"));
+            assert!(ids.contains(&"doc3"));
+        }
+        cleanup(&dir);
+    });
+}
+
+#[test]
+fn embedded_fts_persistence() {
+    async_std::task::block_on(async {
+        let dir = test_dir("fts_persist");
+
+        // First driver: create index and add documents
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            driver.fts_index("test", "articles", "a1", "rust programming language").unwrap();
+            driver.fts_index("test", "articles", "a2", "python programming language").unwrap();
+        }
+
+        // Second driver: verify documents survive
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            let results = driver
+                .fts_search("test", "articles", "rust", 10)
+                .unwrap();
+            assert_eq!(results.len(), 1, "FTS documents should persist across driver instances");
+            assert_eq!(results[0].entity_id, "a1");
+        }
+
+        cleanup(&dir);
+    });
+}

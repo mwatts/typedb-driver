@@ -46,6 +46,9 @@ pub use self::{
 #[cfg(feature = "embedded")]
 pub use self::driver::VectorSearchResult;
 
+#[cfg(feature = "embedded")]
+pub use self::driver::FtsSearchResult;
+
 pub mod analyze;
 pub mod answer;
 mod common;

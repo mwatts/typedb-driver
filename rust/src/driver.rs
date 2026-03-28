@@ -429,6 +429,7 @@ impl TypeDBDriver {
             database_manager,
             data_directory,
             vector_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
+            fulltext_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
 
         // Create a minimal driver with embedded state.
@@ -511,6 +512,62 @@ impl TypeDBDriver {
             })
             .collect())
     }
+
+    /// Index a document for full-text search in a named FTS index.
+    ///
+    /// Creates the index on first use. If a document with the same `entity_id`
+    /// already exists, it is replaced.
+    #[cfg(feature = "embedded")]
+    pub fn fts_index(
+        &self,
+        db_name: &str,
+        index_name: &str,
+        entity_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        let state = self
+            .embedded_state
+            .as_ref()
+            .ok_or_else(|| Error::Other("fts_index requires embedded mode".into()))?;
+        let idx = state.fulltext_index(db_name, index_name)?;
+        let mut guard = idx
+            .lock()
+            .map_err(|e| Error::Other(format!("Failed to lock fulltext index: {e}")))?;
+        guard
+            .index_document(entity_id, text)
+            .map_err(|e| Error::Other(format!("Full-text index error: {e}")))
+    }
+
+    /// Search a named FTS index, returning up to `limit` results ranked by BM25 score.
+    ///
+    /// Creates the index on first use.
+    #[cfg(feature = "embedded")]
+    pub fn fts_search(
+        &self,
+        db_name: &str,
+        index_name: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<FtsSearchResult>> {
+        let state = self
+            .embedded_state
+            .as_ref()
+            .ok_or_else(|| Error::Other("fts_search requires embedded mode".into()))?;
+        let idx = state.fulltext_index(db_name, index_name)?;
+        let guard = idx
+            .lock()
+            .map_err(|e| Error::Other(format!("Failed to lock fulltext index: {e}")))?;
+        let results = guard
+            .search(query, limit)
+            .map_err(|e| Error::Other(format!("Full-text search error: {e}")))?;
+        Ok(results
+            .into_iter()
+            .map(|r| FtsSearchResult {
+                entity_id: r.entity_id,
+                score: r.score,
+            })
+            .collect())
+    }
 }
 
 /// Result of a vector nearest-neighbor search.
@@ -521,6 +578,16 @@ pub struct VectorSearchResult {
     pub entity_id: Vec<u8>,
     /// The distance from the query vector (lower is closer).
     pub distance: f32,
+}
+
+/// Result of a full-text search query.
+#[cfg(feature = "embedded")]
+#[derive(Debug, Clone)]
+pub struct FtsSearchResult {
+    /// The entity identifier associated with the matching document.
+    pub entity_id: String,
+    /// The BM25 relevance score (higher is more relevant).
+    pub score: f32,
 }
 
 impl fmt::Debug for TypeDBDriver {

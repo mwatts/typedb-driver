@@ -47,6 +47,8 @@ pub(crate) struct EmbeddedState {
     pub data_directory: std::path::PathBuf,
     /// Vector indices keyed by (db_name, index_name).
     pub vector_indices: Mutex<HashMap<(String, String), Arc<Mutex<vector::VectorIndex>>>>,
+    /// Full-text indices keyed by (db_name, index_name).
+    pub fulltext_indices: Mutex<HashMap<(String, String), Arc<Mutex<fulltext::FullTextIndex>>>>,
 }
 
 impl EmbeddedState {
@@ -82,6 +84,43 @@ impl EmbeddedState {
             vector::VectorIndex::create(&index_path, dimension)
         }
         .map_err(|e| crate::common::Error::Other(format!("Vector index error: {e}")))?;
+
+        let arc = Arc::new(Mutex::new(index));
+        indices.insert(key, arc.clone());
+        Ok(arc)
+    }
+
+    /// Get or create a full-text index for a database + index name pair.
+    pub fn fulltext_index(
+        &self,
+        db_name: &str,
+        index_name: &str,
+    ) -> crate::common::Result<Arc<Mutex<fulltext::FullTextIndex>>> {
+        let key = (db_name.to_string(), index_name.to_string());
+        let mut indices = self.fulltext_indices.lock().map_err(|e| {
+            crate::common::Error::Other(format!("Failed to acquire fulltext index lock: {e}"))
+        })?;
+
+        if let Some(idx) = indices.get(&key) {
+            return Ok(idx.clone());
+        }
+
+        // Build path: <data_dir>/<db_name>/fulltext/<index_name>
+        let fts_dir = self.data_directory.join(db_name).join("fulltext");
+        std::fs::create_dir_all(&fts_dir).map_err(|e| {
+            crate::common::Error::Other(format!(
+                "Failed to create fulltext directory '{}': {e}",
+                fts_dir.display()
+            ))
+        })?;
+        let index_path = fts_dir.join(index_name);
+
+        let index = if index_path.exists() {
+            fulltext::FullTextIndex::open(&index_path)
+        } else {
+            fulltext::FullTextIndex::create(&index_path)
+        }
+        .map_err(|e| crate::common::Error::Other(format!("Full-text index error: {e}")))?;
 
         let arc = Arc::new(Mutex::new(index));
         indices.insert(key, arc.clone());
