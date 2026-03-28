@@ -19,7 +19,11 @@
 
 use std::{error::Error as StdError, fmt, time::Duration};
 
+#[cfg(feature = "grpc")]
+use itertools::Itertools;
+#[cfg(feature = "grpc")]
 use tonic::{Code, Status};
+#[cfg(feature = "grpc")]
 use tonic_types::StatusExt;
 
 use super::RequestID;
@@ -276,6 +280,7 @@ pub struct ServerError {
 }
 
 impl ServerError {
+    #[cfg(feature = "grpc")]
     pub(crate) fn new(error_code: String, error_domain: String, message: String, stack_trace: Vec<String>) -> Self {
         Self { error_code, error_domain, message, stack_trace }
     }
@@ -342,6 +347,7 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "grpc")]
     fn try_extracting_connection_error_code(code: &str) -> Option<ConnectionError> {
         match code {
             "AUT1" | "AUT2" | "AUT3" => Some(ConnectionError::TokenCredentialInvalid {}),
@@ -351,6 +357,7 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "grpc")]
     fn try_extracting_connection_error_message(message: &str) -> Option<ConnectionError> {
         if is_rst_stream(message) || is_tcp_connect_error(message) || is_connection_error(message) {
             Some(ConnectionError::ServerConnectionFailedNetworking { error: message.to_string() })
@@ -361,6 +368,7 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "grpc")]
     fn parse_unavailable(status_message: &str) -> Error {
         if status_message == "broken pipe" {
             Error::Connection(ConnectionError::BrokenPipe)
@@ -440,6 +448,7 @@ impl From<ServerError> for Error {
     }
 }
 
+#[cfg(feature = "grpc")]
 impl From<Status> for Error {
     fn from(status: Status) -> Self {
         if let Ok(details) = status.check_error_details() {
@@ -489,26 +498,31 @@ impl From<Status> for Error {
     }
 }
 
+#[cfg(feature = "grpc")]
 fn is_rst_stream(message: &str) -> bool {
     // "Received Rst Stream" occurs if the server is in the process of shutting down.
     message.contains("Received Rst Stream")
 }
 
+#[cfg(feature = "grpc")]
 fn is_reading_body_from_connection_error(message: &str) -> bool {
     // This error can be returned when the server crashes
     message.contains("error reading a body from connection")
 }
 
+#[cfg(feature = "grpc")]
 fn is_tcp_connect_error(message: &str) -> bool {
     // No TCP connection
     message.contains("tcp connect error")
 }
 
+#[cfg(feature = "grpc")]
 fn is_connection_error(message: &str) -> bool {
     // Transport-level connection errors
     message.contains("connection error")
 }
 
+#[cfg(feature = "grpc")]
 fn concat_source_messages(status: &Status) -> String {
     let mut errors = String::new();
     errors.push_str(status.message());
@@ -521,12 +535,14 @@ fn concat_source_messages(status: &Status) -> String {
     errors
 }
 
+#[cfg(feature = "grpc")]
 impl From<http::uri::InvalidUri> for Error {
     fn from(err: http::uri::InvalidUri) -> Self {
         Self::Other(err.to_string())
     }
 }
 
+#[cfg(feature = "grpc")]
 impl From<tonic::transport::Error> for Error {
     fn from(err: tonic::transport::Error) -> Self {
         Self::Other(err.to_string())
@@ -545,12 +561,14 @@ impl From<tokio::sync::oneshot::error::RecvError> for Error {
     }
 }
 
+#[cfg(feature = "grpc")]
 impl From<crossbeam::channel::RecvError> for Error {
     fn from(_err: crossbeam::channel::RecvError) -> Self {
         Self::Internal(InternalError::RecvError)
     }
 }
 
+#[cfg(feature = "grpc")]
 impl<T> From<crossbeam::channel::SendError<T>> for Error {
     fn from(_err: crossbeam::channel::SendError<T>) -> Self {
         Self::Internal(InternalError::SendError)

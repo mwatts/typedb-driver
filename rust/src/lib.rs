@@ -30,6 +30,12 @@ pub use self::{
         Address, Addresses, BoxPromise, BoxStream, Error, IID, Promise, QueryOptions, Result, TransactionOptions,
         TransactionType, box_stream, error, info,
     },
+    driver::TypeDBDriver,
+    transaction::Transaction,
+};
+
+#[cfg(feature = "grpc")]
+pub use self::{
     connection::{
         Credentials, DriverOptions, DriverTlsConfig,
         server::{
@@ -38,8 +44,6 @@ pub use self::{
         },
     },
     database::{Database, DatabaseManager},
-    driver::TypeDBDriver,
-    transaction::Transaction,
     user::{User, UserManager},
 };
 
@@ -53,10 +57,13 @@ pub mod analyze;
 pub mod answer;
 mod common;
 pub mod concept;
+#[cfg(feature = "grpc")]
 mod connection;
+#[cfg(feature = "grpc")]
 mod database;
 pub mod driver;
 #[cfg(feature = "embedded")]
 pub(crate) mod embedded;
 pub mod transaction;
+#[cfg(feature = "grpc")]
 mod user;

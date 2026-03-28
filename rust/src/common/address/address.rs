@@ -19,18 +19,26 @@
 
 use std::{fmt, str::FromStr};
 
+#[cfg(feature = "grpc")]
 use http::{Uri, uri::PathAndQuery};
 
-use crate::{
-    common::{Error, Result},
-    error::ConnectionError,
-};
+#[cfg(feature = "grpc")]
+use crate::error::ConnectionError;
+use crate::common::{Error, Result};
 
+#[cfg(feature = "grpc")]
 #[derive(Clone, Hash, PartialEq, Eq, Default)]
 pub struct Address {
     uri: Uri,
 }
 
+#[cfg(not(feature = "grpc"))]
+#[derive(Clone, Hash, PartialEq, Eq, Default)]
+pub struct Address {
+    raw: String,
+}
+
+#[cfg(feature = "grpc")]
 impl Address {
     const DEFAULT_PATH: &'static str = "/";
 
@@ -52,6 +60,7 @@ impl Address {
     }
 }
 
+#[cfg(feature = "grpc")]
 impl FromStr for Address {
     type Err = Error;
 
@@ -64,14 +73,39 @@ impl FromStr for Address {
     }
 }
 
+#[cfg(feature = "grpc")]
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.uri.authority().unwrap())
     }
 }
 
+#[cfg(feature = "grpc")]
 impl fmt::Debug for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.uri)
+    }
+}
+
+#[cfg(not(feature = "grpc"))]
+impl FromStr for Address {
+    type Err = Error;
+
+    fn from_str(address: &str) -> Result<Self> {
+        Ok(Self { raw: address.to_owned() })
+    }
+}
+
+#[cfg(not(feature = "grpc"))]
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.raw)
+    }
+}
+
+#[cfg(not(feature = "grpc"))]
+impl fmt::Debug for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.raw)
     }
 }

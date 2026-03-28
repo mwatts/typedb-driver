@@ -34,7 +34,9 @@ features = {}
 		workspace = true
 
 	[dependencies.typedb-driver]
-		workspace = true
+		path = "../../../../rust"
+		features = ["grpc"]
+		default-features = false
 
 	[dependencies.futures]
 		workspace = true

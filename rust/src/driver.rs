@@ -16,22 +16,37 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-use std::{collections::HashSet, fmt, sync::Arc};
+use std::fmt;
+#[cfg(any(feature = "grpc", feature = "embedded"))]
+use std::sync::Arc;
+#[cfg(feature = "grpc")]
+use std::collections::HashSet;
 
-use tracing::{debug, error};
+use tracing::debug;
+#[cfg(feature = "grpc")]
+use tracing::error;
 
-use crate::{
-    Credentials, DatabaseManager, DriverOptions, Transaction, TransactionOptions, TransactionType, UserManager,
-    common::{Addresses, Result},
-    connection::{
-        runtime::BackgroundRuntime,
-        server::{
-            AvailableServer, Server, server_connection::ServerConnection, server_manager::ServerManager,
-            server_routing::ServerRouting, server_version::ServerVersion,
-        },
+use crate::common::{
+    error::Error,
+    Result,
+};
+#[cfg(feature = "grpc")]
+use crate::connection::{
+    runtime::BackgroundRuntime,
+    server::{
+        AvailableServer, Server, server_connection::ServerConnection, server_manager::ServerManager,
+        server_routing::ServerRouting, server_version::ServerVersion,
     },
 };
+#[cfg(feature = "grpc")]
+use crate::{Addresses, Credentials, DatabaseManager, DriverOptions, UserManager};
+use crate::{Transaction, TransactionOptions, TransactionType};
 
+// ---------------------------------------------------------------------------
+// TypeDBDriver struct -- two layouts depending on feature flags
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "grpc")]
 /// A connection to a TypeDB server which serves as the starting point for all interaction.
 pub struct TypeDBDriver {
     server_manager: Arc<ServerManager>,
@@ -42,6 +57,18 @@ pub struct TypeDBDriver {
     embedded_state: Option<crate::embedded::embedded_backend::EmbeddedState>,
 }
 
+#[cfg(not(feature = "grpc"))]
+/// An embedded TypeDB driver (no gRPC server connection).
+pub struct TypeDBDriver {
+    #[cfg(feature = "embedded")]
+    embedded_state: Option<crate::embedded::embedded_backend::EmbeddedState>,
+}
+
+// ---------------------------------------------------------------------------
+// Constants (shared)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "grpc")]
 impl TypeDBDriver {
     const DRIVER_LANG: &'static str = "rust";
     const VERSION: &'static str = match option_env!("CARGO_PKG_VERSION") {
@@ -50,7 +77,14 @@ impl TypeDBDriver {
     };
 
     pub const DEFAULT_ADDRESS: &'static str = "127.0.0.1:1729";
+}
 
+// ---------------------------------------------------------------------------
+// gRPC constructors & server-oriented methods
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "grpc")]
+impl TypeDBDriver {
     /// Creates a new TypeDB Server connection.
     ///
     /// # Arguments
@@ -139,7 +173,7 @@ impl TypeDBDriver {
         })
     }
 
-    /// Checks it this connection is opened.
+    /// Checks if this connection is opened.
     ///
     /// # Examples
     ///
@@ -272,11 +306,6 @@ impl TypeDBDriver {
         self.server_manager.fetch_primary_server(server_routing).await
     }
 
-    /// Updates address translation of the driver. This lets you actualize new translation
-    /// information without recreating the driver from scratch. Useful after registering new
-    /// replicas requiring address translation.
-    /// This operation will update existing connections using the provided addresses.
-    ///
     /// The ``DriverOptions`` for this connection.
     ///
     /// # Examples
@@ -299,6 +328,45 @@ impl TypeDBDriver {
         self.server_manager.configured_addresses()
     }
 
+    /// Closes this connection if it is open.
+    pub fn force_close(&self) -> Result {
+        if !self.is_open() {
+            return Ok(());
+        }
+
+        debug!("Closing TypeDB driver connection");
+        let close_result = self.server_manager.force_close().and(self.background_runtime.force_close());
+        match &close_result {
+            Ok(_) => debug!("Successfully closed TypeDB driver connection"),
+            Err(e) => error!("Failed to close TypeDB driver connection: {}", e),
+        }
+        close_result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Non-gRPC stubs (embedded-only build)
+// ---------------------------------------------------------------------------
+
+#[cfg(not(feature = "grpc"))]
+impl TypeDBDriver {
+    /// Checks if this connection is opened. Always returns true for embedded-only drivers.
+    pub fn is_open(&self) -> bool {
+        true
+    }
+
+    /// No-op close for embedded-only drivers.
+    pub fn force_close(&self) -> Result {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transaction methods -- gRPC path
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "grpc")]
+impl TypeDBDriver {
     /// Opens a transaction with default options.
     ///
     /// See [`TypeDBDriver::transaction_with_options`] for more details.
@@ -371,28 +439,54 @@ impl TypeDBDriver {
         debug!("Successfully opened transaction for database: {}", database_name);
         Ok(Transaction::new(transaction_stream))
     }
+}
 
-    /// Closes this connection if it is open.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// driver.force_close()
-    /// ```
-    pub fn force_close(&self) -> Result {
-        if !self.is_open() {
-            return Ok(());
-        }
+// ---------------------------------------------------------------------------
+// Transaction methods -- embedded-only (no gRPC)
+// ---------------------------------------------------------------------------
 
-        debug!("Closing TypeDB driver connection");
-        let close_result = self.server_manager.force_close().and(self.background_runtime.force_close());
-        match &close_result {
-            Ok(_) => debug!("Successfully closed TypeDB driver connection"),
-            Err(e) => error!("Failed to close TypeDB driver connection: {}", e),
-        }
-        close_result
+#[cfg(all(feature = "embedded", not(feature = "grpc")))]
+impl TypeDBDriver {
+    /// Opens a transaction with default options (embedded-only).
+    pub async fn transaction(
+        &self,
+        database_name: impl AsRef<str>,
+        transaction_type: TransactionType,
+    ) -> Result<Transaction> {
+        self.transaction_with_options(database_name, transaction_type, TransactionOptions::new()).await
     }
 
+    /// Opens a transaction with the given options (embedded-only).
+    pub async fn transaction_with_options(
+        &self,
+        database_name: impl AsRef<str>,
+        transaction_type: TransactionType,
+        _options: TransactionOptions,
+    ) -> Result<Transaction> {
+        let database_name = database_name.as_ref();
+        debug!("Opening embedded transaction for database: {} with type: {:?}", database_name, transaction_type);
+
+        let embedded_state = self.embedded_state.as_ref()
+            .ok_or_else(|| Error::Other("No embedded state available".into()))?;
+        let database = embedded_state
+            .database_manager
+            .database(database_name)
+            .ok_or_else(|| {
+                Error::Other(format!("Database '{}' not found", database_name))
+            })?;
+        let embedded_tx =
+            crate::embedded::embedded_backend::EmbeddedTransaction::open(database, transaction_type)?;
+        debug!("Successfully opened embedded transaction for database: {}", database_name);
+        Ok(Transaction::new_embedded(embedded_tx))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Embedded constructor -- when gRPC IS available (needs placeholder fields)
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "embedded", feature = "grpc"))]
+impl TypeDBDriver {
     /// Creates a new embedded (in-process) TypeDB driver.
     ///
     /// # Arguments
@@ -404,7 +498,6 @@ impl TypeDBDriver {
     /// ```rust,no_run
     /// TypeDBDriver::new_embedded("/tmp/typedb-data")
     /// ```
-    #[cfg(feature = "embedded")]
     pub fn new_embedded(path: impl AsRef<std::path::Path>) -> Result<Self> {
         use crate::embedded::embedded_backend::EmbeddedState;
 
@@ -449,9 +542,65 @@ impl TypeDBDriver {
             embedded_state: Some(embedded_state),
         })
     }
+}
 
+// ---------------------------------------------------------------------------
+// Embedded constructor -- when gRPC is NOT available (simple struct)
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "embedded", not(feature = "grpc")))]
+impl TypeDBDriver {
+    /// Creates a new embedded (in-process) TypeDB driver.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` -- The data directory path for the embedded database
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// TypeDBDriver::new_embedded("/tmp/typedb-data")
+    /// ```
+    pub fn new_embedded(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        use crate::embedded::embedded_backend::EmbeddedState;
+
+        let data_directory = path.as_ref().to_owned();
+        if !data_directory.exists() {
+            std::fs::create_dir_all(&data_directory).map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create data directory '{}': {}",
+                    data_directory.display(),
+                    e
+                ))
+            })?;
+        }
+
+        let database_manager = database::database_manager::DatabaseManager::new_with_backend(
+                &data_directory,
+                kv::KVBackend::Redb,
+            )
+            .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
+
+        let embedded_state = EmbeddedState {
+            database_manager,
+            data_directory,
+            vector_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
+            fulltext_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
+        };
+
+        Ok(Self {
+            embedded_state: Some(embedded_state),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Embedded helper methods (shared regardless of grpc)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "embedded")]
+impl TypeDBDriver {
     /// Returns the embedded database manager, if this is an embedded driver.
-    #[cfg(feature = "embedded")]
     pub fn embedded_databases(
         &self,
     ) -> Option<&Arc<database::database_manager::DatabaseManager>> {
@@ -461,7 +610,6 @@ impl TypeDBDriver {
     /// Insert a vector for an entity into a named vector index.
     ///
     /// Creates the index on first use with the given `dimension`.
-    #[cfg(feature = "embedded")]
     pub fn vector_insert(
         &self,
         db_name: &str,
@@ -486,7 +634,6 @@ impl TypeDBDriver {
     /// Search for the `k` nearest neighbors in a named vector index.
     ///
     /// Creates the index on first use with the given `dimension`.
-    #[cfg(feature = "embedded")]
     pub fn vector_search(
         &self,
         db_name: &str,
@@ -517,7 +664,6 @@ impl TypeDBDriver {
     ///
     /// Creates the index on first use. If a document with the same `entity_id`
     /// already exists, it is replaced.
-    #[cfg(feature = "embedded")]
     pub fn fts_index(
         &self,
         db_name: &str,
@@ -541,7 +687,6 @@ impl TypeDBDriver {
     /// Search a named FTS index, returning up to `limit` results ranked by BM25 score.
     ///
     /// Creates the index on first use.
-    #[cfg(feature = "embedded")]
     pub fn fts_search(
         &self,
         db_name: &str,
@@ -570,6 +715,10 @@ impl TypeDBDriver {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Embedded result types
+// ---------------------------------------------------------------------------
+
 /// Result of a vector nearest-neighbor search.
 #[cfg(feature = "embedded")]
 #[derive(Debug, Clone)]
@@ -590,8 +739,20 @@ pub struct FtsSearchResult {
     pub score: f32,
 }
 
+// ---------------------------------------------------------------------------
+// Debug impl
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "grpc")]
 impl fmt::Debug for TypeDBDriver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TypeDBDriver").field("server_manager", &self.server_manager).finish()
+    }
+}
+
+#[cfg(not(feature = "grpc"))]
+impl fmt::Debug for TypeDBDriver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TypeDBDriver").finish()
     }
 }
