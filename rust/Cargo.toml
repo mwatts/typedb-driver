@@ -23,6 +23,7 @@
 		"dep:lending_iterator",
 		"dep:typeql",
 		"dep:engine-logger",
+		"dep:vector",
 	]
 
 [package]
@@ -206,6 +207,12 @@
 		git = "https://github.com/mwatts/typedb"
 		branch = "thyra"
 		optional = true
+
+	[dependencies.vector]
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
+		optional = true
+		default-features = false
 
 	[dependencies.typeql]
 		git = "https://github.com/typedb/typeql"

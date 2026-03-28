@@ -428,6 +428,7 @@ impl TypeDBDriver {
         let embedded_state = EmbeddedState {
             database_manager,
             data_directory,
+            vector_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
 
         // Create a minimal driver with embedded state.
@@ -455,6 +456,71 @@ impl TypeDBDriver {
     ) -> Option<&Arc<database::database_manager::DatabaseManager>> {
         self.embedded_state.as_ref().map(|s| &s.database_manager)
     }
+
+    /// Insert a vector for an entity into a named vector index.
+    ///
+    /// Creates the index on first use with the given `dimension`.
+    #[cfg(feature = "embedded")]
+    pub fn vector_insert(
+        &self,
+        db_name: &str,
+        index_name: &str,
+        entity_id: &[u8],
+        vector: &[f32],
+        dimension: usize,
+    ) -> Result<()> {
+        let state = self
+            .embedded_state
+            .as_ref()
+            .ok_or_else(|| Error::Other("vector_insert requires embedded mode".into()))?;
+        let idx = state.vector_index(db_name, index_name, dimension)?;
+        let mut guard = idx
+            .lock()
+            .map_err(|e| Error::Other(format!("Failed to lock vector index: {e}")))?;
+        guard
+            .insert(entity_id, vector)
+            .map_err(|e| Error::Other(format!("Vector insert error: {e}")))
+    }
+
+    /// Search for the `k` nearest neighbors in a named vector index.
+    ///
+    /// Creates the index on first use with the given `dimension`.
+    #[cfg(feature = "embedded")]
+    pub fn vector_search(
+        &self,
+        db_name: &str,
+        index_name: &str,
+        query: &[f32],
+        k: usize,
+        dimension: usize,
+    ) -> Result<Vec<VectorSearchResult>> {
+        let state = self
+            .embedded_state
+            .as_ref()
+            .ok_or_else(|| Error::Other("vector_search requires embedded mode".into()))?;
+        let idx = state.vector_index(db_name, index_name, dimension)?;
+        let guard = idx
+            .lock()
+            .map_err(|e| Error::Other(format!("Failed to lock vector index: {e}")))?;
+        let results = guard.search(query, k);
+        Ok(results
+            .into_iter()
+            .map(|r| VectorSearchResult {
+                entity_id: r.entity_id,
+                distance: r.distance,
+            })
+            .collect())
+    }
+}
+
+/// Result of a vector nearest-neighbor search.
+#[cfg(feature = "embedded")]
+#[derive(Debug, Clone)]
+pub struct VectorSearchResult {
+    /// The entity identifier that was associated with the vector.
+    pub entity_id: Vec<u8>,
+    /// The distance from the query vector (lower is closer).
+    pub distance: f32,
 }
 
 impl fmt::Debug for TypeDBDriver {

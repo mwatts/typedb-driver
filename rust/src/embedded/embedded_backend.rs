@@ -17,7 +17,8 @@
  * under the License.
  */
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use database::{
     database_manager::DatabaseManager as EngineDatabaseManager,
@@ -44,6 +45,48 @@ use crate::{
 pub(crate) struct EmbeddedState {
     pub database_manager: Arc<EngineDatabaseManager>,
     pub data_directory: std::path::PathBuf,
+    /// Vector indices keyed by (db_name, index_name).
+    pub vector_indices: Mutex<HashMap<(String, String), Arc<Mutex<vector::VectorIndex>>>>,
+}
+
+impl EmbeddedState {
+    /// Get or create a vector index for a database + index name pair.
+    pub fn vector_index(
+        &self,
+        db_name: &str,
+        index_name: &str,
+        dimension: usize,
+    ) -> crate::common::Result<Arc<Mutex<vector::VectorIndex>>> {
+        let key = (db_name.to_string(), index_name.to_string());
+        let mut indices = self.vector_indices.lock().map_err(|e| {
+            crate::common::Error::Other(format!("Failed to acquire vector index lock: {e}"))
+        })?;
+
+        if let Some(idx) = indices.get(&key) {
+            return Ok(idx.clone());
+        }
+
+        // Build path: <data_dir>/<db_name>/vectors/<index_name>.vdb
+        let vector_dir = self.data_directory.join(db_name).join("vectors");
+        std::fs::create_dir_all(&vector_dir).map_err(|e| {
+            crate::common::Error::Other(format!(
+                "Failed to create vector directory '{}': {e}",
+                vector_dir.display()
+            ))
+        })?;
+        let index_path = vector_dir.join(format!("{index_name}.vdb"));
+
+        let index = if index_path.exists() {
+            vector::VectorIndex::open(&index_path)
+        } else {
+            vector::VectorIndex::create(&index_path, dimension)
+        }
+        .map_err(|e| crate::common::Error::Other(format!("Vector index error: {e}")))?;
+
+        let arc = Arc::new(Mutex::new(index));
+        indices.insert(key, arc.clone());
+        Ok(arc)
+    }
 }
 
 /// Holds an in-progress engine transaction.

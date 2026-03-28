@@ -43,6 +43,9 @@ pub use self::{
     user::{User, UserManager},
 };
 
+#[cfg(feature = "embedded")]
+pub use self::driver::VectorSearchResult;
+
 pub mod analyze;
 pub mod answer;
 mod common;

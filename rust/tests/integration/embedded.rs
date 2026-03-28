@@ -404,3 +404,88 @@ fn embedded_data_persists_across_driver_instances() {
         cleanup(&dir);
     });
 }
+
+// ─── Vector Search ─────────────────────────────────────────────────
+
+#[test]
+fn embedded_vector_search() {
+    async_std::task::block_on(async {
+        let dir = test_dir("vector");
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            // Define schema with entity
+            let tx = driver.transaction("test", TransactionType::Schema).await.unwrap();
+            tx.query("define entity document, owns title; attribute title, value string;")
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+
+            // Insert documents
+            let tx = driver.transaction("test", TransactionType::Write).await.unwrap();
+            tx.query(r#"insert $d isa document, has title "about cats";"#)
+                .await
+                .unwrap();
+            tx.query(r#"insert $d isa document, has title "about dogs";"#)
+                .await
+                .unwrap();
+            tx.query(r#"insert $d isa document, has title "about fish";"#)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+
+            // Insert vectors (using synthetic IDs for this test)
+            driver
+                .vector_insert("test", "embeddings", b"doc1", &[1.0, 0.0, 0.0], 3)
+                .unwrap();
+            driver
+                .vector_insert("test", "embeddings", b"doc2", &[0.0, 1.0, 0.0], 3)
+                .unwrap();
+            driver
+                .vector_insert("test", "embeddings", b"doc3", &[0.9, 0.1, 0.0], 3)
+                .unwrap();
+
+            // Search for nearest to [1, 0, 0]
+            let results = driver
+                .vector_search("test", "embeddings", &[1.0, 0.0, 0.0], 2, 3)
+                .unwrap();
+            assert_eq!(results.len(), 2, "Should return 2 nearest neighbors");
+            assert_eq!(results[0].entity_id, b"doc1", "Closest should be doc1");
+            assert_eq!(results[1].entity_id, b"doc3", "Second closest should be doc3");
+        }
+        cleanup(&dir);
+    });
+}
+
+#[test]
+fn embedded_vector_persistence() {
+    async_std::task::block_on(async {
+        let dir = test_dir("vector_persist");
+
+        // First driver: create index and insert vectors
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            driver
+                .vector_insert("test", "emb", b"a", &[1.0, 0.0, 0.0], 3)
+                .unwrap();
+            driver
+                .vector_insert("test", "emb", b"b", &[0.0, 1.0, 0.0], 3)
+                .unwrap();
+        }
+
+        // Second driver: verify vectors survive
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            let results = driver
+                .vector_search("test", "emb", &[1.0, 0.0, 0.0], 2, 3)
+                .unwrap();
+            assert_eq!(results.len(), 2, "Vectors should persist across driver instances");
+            assert_eq!(results[0].entity_id, b"a");
+        }
+
+        cleanup(&dir);
+    });
+}
