@@ -121,68 +121,90 @@
 	path = "tests/integration/values.rs"
 	name = "test_values"
 
-	# Engine dependencies (optional, for embedded feature)
+	# Engine dependencies (optional, for embedded feature).
+	# Resolved from mwatts/typedb fork. Local development uses [patch] in
+	# the workspace Cargo.toml to override with submodule paths.
 	[dependencies.database]
-		path = "../../typedb/database"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 		default-features = false
 
 	[dependencies.kv]
-		path = "../../typedb/kv"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 		default-features = false
 
 	[dependencies.storage]
-		path = "../../typedb/storage"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 		default-features = false
 
 	[dependencies.executor]
-		path = "../../typedb/executor"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.query]
-		path = "../../typedb/query"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.engine-concept]
 		package = "concept"
-		path = "../../typedb/concept"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.encoding]
-		path = "../../typedb/encoding"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.function]
-		path = "../../typedb/function"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.ir]
-		path = "../../typedb/ir"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.compiler]
-		path = "../../typedb/compiler"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.engine-options]
 		package = "options"
-		path = "../../typedb/common/options"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.engine-answer]
 		package = "answer"
-		path = "../../typedb/answer"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.engine-resource]
 		package = "resource"
-		path = "../../typedb/resource"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.lending_iterator]
-		path = "../../typedb/common/lending_iterator"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
+		optional = true
+
+	[dependencies.engine-logger]
+		package = "logger"
+		git = "https://github.com/mwatts/typedb"
+		branch = "thyra"
 		optional = true
 
 	[dependencies.typeql]
@@ -190,11 +212,6 @@
 		tag = "3.8.0"
 		optional = true
 		default-features = false
-
-	[dependencies.engine-logger]
-		package = "logger"
-		path = "../../typedb/common/logger"
-		optional = true
 
 [[test]]
 	path = "tests/integration/embedded.rs"

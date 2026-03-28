@@ -146,3 +146,23 @@
 			version = "0.8.4"
 			default-features = false
 
+# Local development overrides: when building from the thyra submodule layout,
+# these patches redirect git deps to the local typedb fork submodule.
+# External consumers of the driver (via git dep) do NOT see these patches.
+[patch."https://github.com/mwatts/typedb"]
+	database = { path = "../typedb/database" }
+	kv = { path = "../typedb/kv" }
+	storage = { path = "../typedb/storage" }
+	executor = { path = "../typedb/executor" }
+	query = { path = "../typedb/query" }
+	concept = { path = "../typedb/concept" }
+	encoding = { path = "../typedb/encoding" }
+	function = { path = "../typedb/function" }
+	ir = { path = "../typedb/ir" }
+	compiler = { path = "../typedb/compiler" }
+	options = { path = "../typedb/common/options" }
+	answer = { path = "../typedb/answer" }
+	resource = { path = "../typedb/resource" }
+	lending_iterator = { path = "../typedb/common/lending_iterator" }
+	logger = { path = "../typedb/common/logger" }
+
