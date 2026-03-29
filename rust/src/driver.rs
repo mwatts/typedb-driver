@@ -603,7 +603,7 @@ impl TypeDBDriver {
     /// Returns the embedded database manager, if this is an embedded driver.
     pub fn embedded_databases(
         &self,
-    ) -> Option<&Arc<database::database_manager::DatabaseManager>> {
+    ) -> Option<&Arc<::database::database_manager::DatabaseManager>> {
         self.embedded_state.as_ref().map(|s| &s.database_manager)
     }
 
