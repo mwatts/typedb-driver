@@ -270,6 +270,16 @@
 	required-features = ["embedded"]
 
 [[test]]
+	path = "tests/integration/embedded_hybrid.rs"
+	name = "test_embedded_hybrid"
+	required-features = ["embedded"]
+
+[[test]]
+	path = "tests/integration/embedded_multi_db.rs"
+	name = "test_embedded_multi_db"
+	required-features = ["embedded"]
+
+[[test]]
 	path = "tests/integration/driver.rs"
 	name = "test_driver"
 	required-features = ["grpc"]
