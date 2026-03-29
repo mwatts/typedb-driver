@@ -201,7 +201,7 @@ fn database_deletion() {
                     .transaction(db, TransactionType::Schema)
                     .await
                     .unwrap();
-                tx.query("define entity item, owns label; attribute label, value string;")
+                tx.query("define entity item, owns tag; attribute tag, value string;")
                     .await
                     .unwrap();
                 tx.commit().await.unwrap();
@@ -210,7 +210,7 @@ fn database_deletion() {
                     .transaction(db, TransactionType::Write)
                     .await
                     .unwrap();
-                tx.query(&format!(r#"insert $i isa item, has label "{}";"#, db))
+                tx.query(&format!(r#"insert $i isa item, has tag "{}";"#, db))
                     .await
                     .unwrap();
                 tx.commit().await.unwrap();
@@ -237,7 +237,7 @@ fn database_deletion() {
                     .await
                     .unwrap();
                 let answer = tx
-                    .query("match $i isa item, has label $l;")
+                    .query("match $i isa item, has tag $l;")
                     .await
                     .unwrap();
                 let rows: Vec<ConceptRow> = answer.into_rows().try_collect().await.unwrap();
