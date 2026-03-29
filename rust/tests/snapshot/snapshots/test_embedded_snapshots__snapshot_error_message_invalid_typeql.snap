@@ -1,0 +1,10 @@
+---
+source: rust/tests/snapshot/embedded_snapshots.rs
+assertion_line: 135
+expression: error_string
+---
+Failed to parse query: [TQL03] TypeQL Error: There is a syntax error
+parsing error: expected query_structure
+Near 1:0:
+--> this is not valid typeql at all!!!
+    ^

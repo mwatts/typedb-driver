@@ -1,0 +1,8 @@
+---
+source: rust/tests/snapshot/embedded_snapshots.rs
+assertion_line: 96
+expression: snapshot
+---
+person: Entity(person: 0x[ID])
+name: Attribute(name: "Alice")
+age: Attribute(age: 30)

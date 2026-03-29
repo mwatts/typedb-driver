@@ -1,0 +1,6 @@
+---
+source: rust/tests/snapshot/embedded_snapshots.rs
+assertion_line: 156
+expression: error_string
+---
+Database 'nonexistent_database' not found
