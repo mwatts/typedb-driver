@@ -280,6 +280,11 @@
 	required-features = ["embedded"]
 
 [[test]]
+	path = "tests/integration/embedded_mutations.rs"
+	name = "test_embedded_mutations"
+	required-features = ["embedded"]
+
+[[test]]
 	path = "tests/integration/driver.rs"
 	name = "test_driver"
 	required-features = ["grpc"]
