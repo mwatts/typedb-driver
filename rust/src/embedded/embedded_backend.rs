@@ -33,11 +33,12 @@ use typeql::query::QueryStructure;
 
 use crate::{
     answer::{
+        concept_document::ConceptDocumentHeader,
         concept_row::{ConceptRow, ConceptRowHeader},
         QueryAnswer, QueryType,
     },
     common::{Error, Result},
-    embedded::convert::convert_variable_value,
+    embedded::convert::{convert_document, convert_variable_value},
     QueryOptions, TransactionType,
 };
 
@@ -271,9 +272,34 @@ impl EmbeddedTransaction {
                             Box::pin(stream),
                         ))
                     }
-                    itertools::Either::Right(_documents) => {
+                    itertools::Either::Right((parameters, documents)) => {
                         // Document-based answer (fetch queries)
-                        Ok(QueryAnswer::Ok(QueryType::WriteQuery))
+                        let tx_ref = tx.as_ref().unwrap();
+                        let header = Arc::new(ConceptDocumentHeader {
+                            query_type: QueryType::WriteQuery,
+                        });
+
+                        let driver_docs: Vec<_> = documents
+                            .into_iter()
+                            .map(|doc| {
+                                let mut driver_doc = convert_document(
+                                    doc,
+                                    tx_ref.snapshot.as_ref(),
+                                    &tx_ref.type_manager,
+                                    &tx_ref.thing_manager,
+                                    &parameters,
+                                );
+                                // Override header with shared one
+                                driver_doc = crate::answer::concept_document::ConceptDocument::new(
+                                    header.clone(),
+                                    driver_doc.root,
+                                );
+                                Ok(driver_doc)
+                            })
+                            .collect();
+
+                        let stream = futures::stream::iter(driver_docs);
+                        Ok(QueryAnswer::ConceptDocumentStream(header, Box::pin(stream)))
                     }
                 }
             }
@@ -295,8 +321,45 @@ impl EmbeddedTransaction {
 
                 if read_pipeline.has_fetch() {
                     // Document-based result (fetch queries)
-                    // For now, return Ok since full document conversion is complex
-                    return Ok(QueryAnswer::Ok(QueryType::ReadQuery));
+                    let (iterator, context) = read_pipeline
+                        .into_documents_iterator(ExecutionInterrupt::new_uninterruptible())
+                        .map_err(|(e, _)| Error::Other(format!("Fetch query execution error: {e:?}")))?;
+
+                    let header = Arc::new(ConceptDocumentHeader {
+                        query_type: QueryType::ReadQuery,
+                    });
+
+                    let snapshot = &*context.snapshot;
+                    let type_manager = &tx_ref.type_manager;
+                    let thing_manager_ref = &context.thing_manager;
+                    let parameters = &context.parameters;
+
+                    let mut docs = Vec::new();
+                    for result in iterator {
+                        match result {
+                            Ok(doc) => {
+                                let mut driver_doc = convert_document(
+                                    doc,
+                                    snapshot,
+                                    type_manager,
+                                    thing_manager_ref,
+                                    parameters,
+                                );
+                                driver_doc = crate::answer::concept_document::ConceptDocument::new(
+                                    header.clone(),
+                                    driver_doc.root,
+                                );
+                                docs.push(Ok(driver_doc));
+                            }
+                            Err(e) => {
+                                docs.push(Err(Error::Other(format!("Document iteration error: {e:?}"))));
+                                break;
+                            }
+                        }
+                    }
+
+                    let stream = futures::stream::iter(docs);
+                    return Ok(QueryAnswer::ConceptDocumentStream(header, Box::pin(stream)));
                 }
 
                 let named_outputs = read_pipeline.rows_positions().unwrap().clone();

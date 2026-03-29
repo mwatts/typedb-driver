@@ -17,21 +17,26 @@
  * under the License.
  */
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use engine_answer::variable_value::VariableValue;
 use engine_concept::{
     thing::{thing_manager::ThingManager, ThingAPI},
     type_::{type_manager::TypeManager, TypeAPI},
 };
 use encoding::value::value::Value as EngineValue;
+use ir::pipeline::ParameterRegistry;
 use storage::snapshot::ReadableSnapshot;
 
 use crate::{
+    answer::concept_document::{self, ConceptDocument as DriverConceptDocument, Leaf, Node},
     concept::{
         self,
         instance::{Attribute, Entity, Relation},
         type_::{AttributeType, EntityType, RelationType, RoleType},
         value::{Decimal, Duration, TimeZone, Value},
-        Concept, ValueType,
+        Concept, Kind as DriverKind, ValueType,
     },
     IID,
 };
@@ -207,4 +212,119 @@ fn convert_timezone(engine_tz: &encoding::value::timezone::TimeZone) -> TimeZone
         encoding::value::timezone::TimeZone::IANA(tz) => TimeZone::IANA(*tz),
         encoding::value::timezone::TimeZone::Fixed(fixed) => TimeZone::Fixed(*fixed),
     }
+}
+
+// ─── Document Conversion ────────────────────────────────────────────
+
+/// Convert an engine ConceptDocument to a driver ConceptDocument.
+pub(crate) fn convert_document(
+    engine_doc: executor::document::ConceptDocument,
+    snapshot: &impl ReadableSnapshot,
+    type_manager: &TypeManager,
+    thing_manager: &ThingManager,
+    parameters: &ParameterRegistry,
+) -> DriverConceptDocument {
+    let root = convert_document_node(engine_doc.root, snapshot, type_manager, thing_manager, parameters);
+    // We create a header per-document but the caller will wrap with a shared header
+    DriverConceptDocument::new(
+        Arc::new(concept_document::ConceptDocumentHeader {
+            query_type: crate::answer::QueryType::ReadQuery,
+        }),
+        Some(root),
+    )
+}
+
+/// Convert an engine DocumentNode to a driver Node.
+fn convert_document_node(
+    node: executor::document::DocumentNode,
+    snapshot: &impl ReadableSnapshot,
+    type_manager: &TypeManager,
+    thing_manager: &ThingManager,
+    parameters: &ParameterRegistry,
+) -> Node {
+    match node {
+        executor::document::DocumentNode::List(list) => {
+            let items: Vec<Node> = list
+                .list
+                .into_iter()
+                .map(|n| convert_document_node(n, snapshot, type_manager, thing_manager, parameters))
+                .collect();
+            Node::List(items)
+        }
+        executor::document::DocumentNode::Map(map) => {
+            let entries: HashMap<String, Node> = match map {
+                executor::document::DocumentMap::UserKeys(map) => {
+                    map.into_iter()
+                        .map(|(key, value)| {
+                            let key_name = parameters
+                                .fetch_key(&key)
+                                .cloned()
+                                .unwrap_or_else(|| format!("{:?}", key));
+                            let node = convert_document_node(value, snapshot, type_manager, thing_manager, parameters);
+                            (key_name, node)
+                        })
+                        .collect()
+                }
+                executor::document::DocumentMap::GeneratedKeys(map) => {
+                    map.into_iter()
+                        .map(|(label, value)| {
+                            let key_name = label.scoped_name.as_str().to_owned();
+                            let node = convert_document_node(value, snapshot, type_manager, thing_manager, parameters);
+                            (key_name, node)
+                        })
+                        .collect()
+                }
+            };
+            Node::Map(entries)
+        }
+        executor::document::DocumentNode::Leaf(leaf) => {
+            Node::Leaf(convert_document_leaf(leaf, snapshot, type_manager, thing_manager))
+        }
+    }
+}
+
+/// Convert an engine DocumentLeaf to a driver Leaf option.
+fn convert_document_leaf(
+    leaf: executor::document::DocumentLeaf,
+    snapshot: &impl ReadableSnapshot,
+    type_manager: &TypeManager,
+    thing_manager: &ThingManager,
+) -> Option<Leaf> {
+    match leaf {
+        executor::document::DocumentLeaf::Empty => Some(Leaf::Empty),
+        executor::document::DocumentLeaf::Concept(concept) => {
+            // engine answer::Concept has Type, Thing, Value variants
+            match concept {
+                engine_answer::Concept::Type(t) => {
+                    let driver_concept = convert_type_from_answer_type(&t, snapshot, type_manager);
+                    Some(Leaf::Concept(driver_concept))
+                }
+                engine_answer::Concept::Thing(t) => {
+                    let driver_concept = convert_thing(&t, snapshot, type_manager, thing_manager);
+                    Some(Leaf::Concept(driver_concept))
+                }
+                engine_answer::Concept::Value(v) => {
+                    Some(Leaf::Concept(Concept::Value(convert_value(&v))))
+                }
+            }
+        }
+        executor::document::DocumentLeaf::Kind(kind) => {
+            let driver_kind = match kind {
+                encoding::graph::type_::Kind::Entity => DriverKind::Entity,
+                encoding::graph::type_::Kind::Relation => DriverKind::Relation,
+                encoding::graph::type_::Kind::Attribute => DriverKind::Attribute,
+                encoding::graph::type_::Kind::Role => DriverKind::Role,
+            };
+            Some(Leaf::Kind(driver_kind))
+        }
+    }
+}
+
+/// Convert an engine answer::Type to a driver Concept (reusing existing convert_type logic).
+fn convert_type_from_answer_type(
+    engine_type: &engine_answer::Type,
+    snapshot: &impl ReadableSnapshot,
+    type_manager: &TypeManager,
+) -> Concept {
+    convert_type(engine_type, snapshot, type_manager)
 }

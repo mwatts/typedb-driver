@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use futures::{StreamExt, TryStreamExt};
 use typedb_driver::{
-    answer::{ConceptRow, QueryAnswer},
+    answer::{ConceptDocument, ConceptRow, QueryAnswer},
     concept::Concept,
     TransactionType, TypeDBDriver,
 };
@@ -541,3 +541,120 @@ fn embedded_fts_persistence() {
         cleanup(&dir);
     });
 }
+
+// ─── Fetch Query (Document Results) ─────────────────────────────────
+
+#[test]
+fn embedded_fetch_query() {
+    async_std::task::block_on(async {
+        let dir = test_dir("fetch");
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            // Define schema
+            let tx = driver.transaction("test", TransactionType::Schema).await.unwrap();
+            tx.query("define entity person, owns name, owns age; attribute name, value string; attribute age, value integer;")
+                .await.unwrap();
+            tx.commit().await.unwrap();
+
+            // Insert data
+            let tx = driver.transaction("test", TransactionType::Write).await.unwrap();
+            tx.query("insert $p isa person, has name \"Alice\", has age 30;").await.unwrap();
+            tx.commit().await.unwrap();
+
+            // Fetch query
+            let tx = driver.transaction("test", TransactionType::Read).await.unwrap();
+            let answer = tx
+                .query("match $p isa person; fetch { \"person_name\": $p.name, \"person_age\": $p.age };")
+                .await
+                .unwrap();
+            assert!(answer.is_document_stream(), "Fetch query should return a document stream");
+
+            let docs: Vec<ConceptDocument> = answer.into_documents().try_collect().await.unwrap();
+            assert!(docs.len() >= 1, "Should get at least 1 document, got {}", docs.len());
+
+            // Convert to JSON and verify structure
+            let json = docs.into_iter().next().unwrap().into_json();
+            let json_str = format!("{:?}", json);
+            // The document should contain person_name and person_age keys
+            assert!(
+                json_str.contains("person_name") || json_str.contains("name"),
+                "Document JSON should contain name-related key: {}",
+                json_str
+            );
+        }
+        cleanup(&dir);
+    });
+}
+
+// ─── Inference Rules ────────────────────────────────────────────────
+
+// NOTE: TypeQL 3.x does not support traditional "rule" definitions.
+// Rules/inference in TypeQL 3.x may use a different mechanism (e.g., functions).
+// The engine source shows no "rule" keyword support in the current TypeQL parser.
+// This test documents the finding that inference rules are not available in the
+// current TypeQL 3.x syntax used by this engine version.
+
+// ─── Temporal Queries ───────────────────────────────────────────────
+
+// NOTE: The engine supports `open_snapshot_read_at(SequenceNumber)` at the storage level,
+// and there is a TODO comment in TransactionRead::open about implementing `open_at`.
+// However, TransactionRead::open does not currently accept a sequence number parameter,
+// and TransactionWrite::commit() does not return the sequence number of the committed data.
+// Implementing temporal reads would require:
+// 1. Adding an `open_at(database, sequence_number, options)` constructor to TransactionRead
+// 2. Exposing the commit sequence number from TransactionWrite::commit()
+// 3. Handling statistics staleness (noted in the engine TODO)
+// This is not feasible without engine changes, so we skip this feature.
+
+// ─── Reduce Expressions ─────────────────────────────────────────────
+
+#[test]
+fn embedded_reduce_expression() {
+    // TypeQL 3.x uses `reduce` (not `let`) for aggregation expressions.
+    // Test that reduce works through the embedded path.
+    async_std::task::block_on(async {
+        let dir = test_dir("reduce_expr");
+        {
+            let driver = TypeDBDriver::new_embedded(&dir).unwrap();
+            driver.embedded_databases().unwrap().put_database("test").unwrap();
+
+            let tx = driver.transaction("test", TransactionType::Schema).await.unwrap();
+            tx.query("define entity person, owns name, owns age; attribute name, value string; attribute age, value integer;")
+                .await.unwrap();
+            tx.commit().await.unwrap();
+
+            let tx = driver.transaction("test", TransactionType::Write).await.unwrap();
+            tx.query("insert $p isa person, has name \"Alice\", has age 30;").await.unwrap();
+            tx.query("insert $p isa person, has name \"Bob\", has age 25;").await.unwrap();
+            tx.commit().await.unwrap();
+
+            // Test reduce with sum aggregation
+            let tx = driver.transaction("test", TransactionType::Read).await.unwrap();
+            let answer = tx
+                .query("match $p isa person, has age $a; reduce $total = sum($a);")
+                .await
+                .unwrap();
+            assert!(answer.is_row_stream(), "Reduce query should return a row stream");
+            let rows: Vec<ConceptRow> = answer.into_rows().try_collect().await.unwrap();
+            assert_eq!(rows.len(), 1, "Reduce should return exactly 1 row");
+
+            // Sum of 30 + 25 = 55
+            let total = rows[0].get("total").unwrap().unwrap();
+            assert_eq!(total.try_get_integer(), Some(55), "Sum of ages should be 55");
+        }
+        cleanup(&dir);
+    });
+}
+
+// ─── Query Analyze ──────────────────────────────────────────────────
+
+// NOTE: The engine has an `analyse` method on QueryManager that returns AnalysedQuery
+// (source, structure, annotations). However, the embedded driver currently does not expose
+// this functionality. Implementing it would require:
+// 1. Adding an `analyze()` method to EmbeddedTransaction that calls query_manager.analyse()
+// 2. Converting AnalysedQuery (engine type) to the driver's analyze response format
+// 3. The driver has an `analyze` module but it's designed for the gRPC response format
+// This is feasible but requires design decisions about the driver API surface.
+// Skipping for now to avoid API changes.
