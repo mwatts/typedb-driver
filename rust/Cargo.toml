@@ -53,6 +53,15 @@
 	[dev-dependencies.smol]
 		workspace = true
 
+	[dev-dependencies.proptest]
+		version = "1"
+		default-features = false
+		features = ["std"]
+
+	[dev-dependencies.insta]
+		version = "1"
+		features = ["yaml"]
+
 	[dev-dependencies.regex]
 		workspace = true
 
@@ -282,6 +291,21 @@
 [[test]]
 	path = "tests/integration/embedded_mutations.rs"
 	name = "test_embedded_mutations"
+	required-features = ["embedded"]
+
+[[test]]
+	path = "tests/integration/embedded_property.rs"
+	name = "test_embedded_property"
+	required-features = ["embedded"]
+
+[[test]]
+	path = "tests/integration/embedded_scale.rs"
+	name = "test_embedded_scale"
+	required-features = ["embedded"]
+
+[[test]]
+	path = "tests/snapshot/embedded_snapshots.rs"
+	name = "test_embedded_snapshots"
 	required-features = ["embedded"]
 
 [[test]]
