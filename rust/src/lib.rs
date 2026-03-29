@@ -53,13 +53,16 @@ pub use self::driver::VectorSearchResult;
 #[cfg(feature = "embedded")]
 pub use self::driver::FtsSearchResult;
 
+#[cfg(all(feature = "embedded", not(feature = "grpc")))]
+pub use self::database::{Database, DatabaseManager};
+
 pub mod analyze;
 pub mod answer;
 mod common;
 pub mod concept;
 #[cfg(feature = "grpc")]
 mod connection;
-#[cfg(feature = "grpc")]
+#[cfg(any(feature = "grpc", feature = "embedded"))]
 mod database;
 pub mod driver;
 #[cfg(feature = "embedded")]
