@@ -265,6 +265,11 @@
 	required-features = ["embedded"]
 
 [[test]]
+	path = "tests/integration/embedded_types.rs"
+	name = "test_embedded_types"
+	required-features = ["embedded"]
+
+[[test]]
 	path = "tests/integration/driver.rs"
 	name = "test_driver"
 	required-features = ["grpc"]
