@@ -328,3 +328,254 @@ fn convert_type_from_answer_type(
 ) -> Concept {
     convert_type(engine_type, snapshot, type_manager)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::borrow::Cow;
+
+    use chrono::{FixedOffset, NaiveDate, NaiveDateTime, TimeZone as ChronoTimeZone};
+    use chrono_tz::Tz;
+    use encoding::{
+        graph::{
+            definition::definition_key::{DefinitionID, DefinitionKey},
+            type_::Kind,
+        },
+        layout::prefix::Prefix,
+        value::{
+            decimal_value::Decimal as EngineDecimal,
+            duration_value::Duration as EngineDuration,
+            timezone::TimeZone as EngineTimeZone,
+            value::Value as EngineValue,
+            value_type::ValueType as EngineValueType,
+        },
+    };
+
+    // ─── convert_value_type tests ──────────────────────────────────────
+
+    #[test]
+    fn test_convert_value_type_boolean() {
+        assert!(matches!(convert_value_type(&EngineValueType::Boolean), ValueType::Boolean));
+    }
+
+    #[test]
+    fn test_convert_value_type_integer() {
+        assert!(matches!(convert_value_type(&EngineValueType::Integer), ValueType::Integer));
+    }
+
+    #[test]
+    fn test_convert_value_type_double() {
+        assert!(matches!(convert_value_type(&EngineValueType::Double), ValueType::Double));
+    }
+
+    #[test]
+    fn test_convert_value_type_decimal() {
+        assert!(matches!(convert_value_type(&EngineValueType::Decimal), ValueType::Decimal));
+    }
+
+    #[test]
+    fn test_convert_value_type_string() {
+        assert!(matches!(convert_value_type(&EngineValueType::String), ValueType::String));
+    }
+
+    #[test]
+    fn test_convert_value_type_date() {
+        assert!(matches!(convert_value_type(&EngineValueType::Date), ValueType::Date));
+    }
+
+    #[test]
+    fn test_convert_value_type_datetime() {
+        assert!(matches!(convert_value_type(&EngineValueType::DateTime), ValueType::Datetime));
+    }
+
+    #[test]
+    fn test_convert_value_type_datetime_tz() {
+        assert!(matches!(convert_value_type(&EngineValueType::DateTimeTZ), ValueType::DatetimeTZ));
+    }
+
+    #[test]
+    fn test_convert_value_type_duration() {
+        assert!(matches!(convert_value_type(&EngineValueType::Duration), ValueType::Duration));
+    }
+
+    #[test]
+    fn test_convert_value_type_struct() {
+        let key = DefinitionKey::build(Prefix::DefinitionStruct, DefinitionID::build(1));
+        let result = convert_value_type(&EngineValueType::Struct(key));
+        match result {
+            ValueType::Struct(name) => assert_eq!(name, "struct"),
+            other => panic!("expected ValueType::Struct, got {:?}", other),
+        }
+    }
+
+    // ─── convert_value tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_convert_value_boolean() {
+        assert_eq!(convert_value(&EngineValue::Boolean(true)), Value::Boolean(true));
+        assert_eq!(convert_value(&EngineValue::Boolean(false)), Value::Boolean(false));
+    }
+
+    #[test]
+    fn test_convert_value_integer() {
+        assert_eq!(convert_value(&EngineValue::Integer(0)), Value::Integer(0));
+        assert_eq!(convert_value(&EngineValue::Integer(42)), Value::Integer(42));
+        assert_eq!(convert_value(&EngineValue::Integer(-1)), Value::Integer(-1));
+        assert_eq!(convert_value(&EngineValue::Integer(i64::MAX)), Value::Integer(i64::MAX));
+        assert_eq!(convert_value(&EngineValue::Integer(i64::MIN)), Value::Integer(i64::MIN));
+    }
+
+    #[test]
+    fn test_convert_value_double() {
+        assert_eq!(convert_value(&EngineValue::Double(3.14)), Value::Double(3.14));
+        assert_eq!(convert_value(&EngineValue::Double(0.0)), Value::Double(0.0));
+        assert_eq!(convert_value(&EngineValue::Double(-1.5)), Value::Double(-1.5));
+    }
+
+    #[test]
+    fn test_convert_value_decimal() {
+        let engine_dec: EngineDecimal = "123.45".parse().unwrap();
+        let result = convert_value(&EngineValue::Decimal(engine_dec));
+        match result {
+            Value::Decimal(d) => {
+                assert_eq!(d.integer_part(), 123);
+                assert_eq!(d.fractional_part(), engine_dec.fractional_part());
+            }
+            other => panic!("expected Value::Decimal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_value_string() {
+        let result = convert_value(&EngineValue::String(Cow::Borrowed("hello")));
+        assert_eq!(result, Value::String(String::from("hello")));
+
+        let result = convert_value(&EngineValue::String(Cow::Owned(String::from("world"))));
+        assert_eq!(result, Value::String(String::from("world")));
+
+        let result = convert_value(&EngineValue::String(Cow::Borrowed("")));
+        assert_eq!(result, Value::String(String::new()));
+    }
+
+    #[test]
+    fn test_convert_value_date() {
+        let date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let result = convert_value(&EngineValue::Date(date));
+        assert_eq!(result, Value::Date(date));
+    }
+
+    #[test]
+    fn test_convert_value_datetime() {
+        let dt = NaiveDate::from_ymd_opt(2024, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 30, 45)
+            .unwrap();
+        let result = convert_value(&EngineValue::DateTime(dt));
+        assert_eq!(result, Value::Datetime(dt));
+    }
+
+    #[test]
+    fn test_convert_value_datetime_tz_iana() {
+        let tz = EngineTimeZone::IANA(Tz::UTC);
+        let naive = NaiveDate::from_ymd_opt(2024, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let engine_dt = tz.from_utc_datetime(&naive);
+        let result = convert_value(&EngineValue::DateTimeTZ(engine_dt));
+        match result {
+            Value::DatetimeTZ(dt) => {
+                assert_eq!(dt.naive_utc(), naive);
+            }
+            other => panic!("expected Value::DatetimeTZ, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_value_datetime_tz_fixed() {
+        let offset = FixedOffset::east_opt(5 * 3600).unwrap();
+        let tz = EngineTimeZone::Fixed(offset);
+        let naive = NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let engine_dt = tz.from_utc_datetime(&naive);
+        let result = convert_value(&EngineValue::DateTimeTZ(engine_dt));
+        match result {
+            Value::DatetimeTZ(dt) => {
+                assert_eq!(dt.naive_utc(), naive);
+            }
+            other => panic!("expected Value::DatetimeTZ, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_value_duration() {
+        let engine_dur = EngineDuration::months(6);
+        let result = convert_value(&EngineValue::Duration(engine_dur));
+        match result {
+            Value::Duration(d) => {
+                assert_eq!(d.months(), 6);
+                assert_eq!(d.days(), 0);
+                assert_eq!(d.nanos(), 0);
+            }
+            other => panic!("expected Value::Duration, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_value_duration_complex() {
+        let engine_dur = EngineDuration::days(10)
+            .checked_add(EngineDuration::hours(5))
+            .unwrap();
+        let result = convert_value(&EngineValue::Duration(engine_dur));
+        match result {
+            Value::Duration(d) => {
+                assert_eq!(d.months(), 0);
+                assert_eq!(d.days(), 10);
+                assert_eq!(d.nanos(), 5 * 3_600_000_000_000u64);
+            }
+            other => panic!("expected Value::Duration, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_value_struct_placeholder() {
+        // Struct conversion returns a placeholder string
+        let key = DefinitionKey::build(Prefix::DefinitionStruct, DefinitionID::build(1));
+        let struct_val = encoding::value::value_struct::StructValue::new(key, Default::default());
+        let result = convert_value(&EngineValue::Struct(Cow::Owned(struct_val)));
+        assert_eq!(result, Value::String(String::from("<struct>")));
+    }
+
+    // ─── convert_timezone tests ────────────────────────────────────────
+
+    #[test]
+    fn test_convert_timezone_iana() {
+        let tz = convert_timezone(&EngineTimeZone::IANA(Tz::US__Eastern));
+        match tz {
+            TimeZone::IANA(iana) => assert_eq!(iana, Tz::US__Eastern),
+            other => panic!("expected TimeZone::IANA, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_timezone_fixed() {
+        let offset = FixedOffset::west_opt(8 * 3600).unwrap();
+        let tz = convert_timezone(&EngineTimeZone::Fixed(offset));
+        match tz {
+            TimeZone::Fixed(fixed) => assert_eq!(fixed, offset),
+            other => panic!("expected TimeZone::Fixed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_timezone_utc() {
+        let tz = convert_timezone(&EngineTimeZone::IANA(Tz::UTC));
+        match tz {
+            TimeZone::IANA(iana) => assert_eq!(iana, Tz::UTC),
+            other => panic!("expected TimeZone::IANA(UTC), got {:?}", other),
+        }
+    }
+}
