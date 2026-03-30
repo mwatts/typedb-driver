@@ -37,9 +37,9 @@ use crate::{
         concept_row::{ConceptRow, ConceptRowHeader},
         QueryAnswer, QueryType,
     },
-    common::{Error, Result},
+    common::{stream::box_stream, Error, Result},
     embedded::convert::{convert_document, convert_variable_value},
-    QueryOptions, TransactionType,
+    BoxStream, QueryOptions, TransactionType,
 };
 
 /// Holds the engine state for an embedded TypeDB driver.
@@ -266,10 +266,9 @@ impl EmbeddedTransaction {
                             &tx_ref.thing_manager,
                         );
 
-                        let stream = futures::stream::iter(rows.into_iter().map(Ok));
                         Ok(QueryAnswer::ConceptRowStream(
                             header,
-                            Box::pin(stream),
+                            vec_to_boxstream(rows.into_iter().map(Ok).collect()),
                         ))
                     }
                     itertools::Either::Right((parameters, documents)) => {
@@ -298,8 +297,7 @@ impl EmbeddedTransaction {
                             })
                             .collect();
 
-                        let stream = futures::stream::iter(driver_docs);
-                        Ok(QueryAnswer::ConceptDocumentStream(header, Box::pin(stream)))
+                        Ok(QueryAnswer::ConceptDocumentStream(header, vec_to_boxstream(driver_docs)))
                     }
                 }
             }
@@ -358,8 +356,7 @@ impl EmbeddedTransaction {
                         }
                     }
 
-                    let stream = futures::stream::iter(docs);
-                    return Ok(QueryAnswer::ConceptDocumentStream(header, Box::pin(stream)));
+                    return Ok(QueryAnswer::ConceptDocumentStream(header, vec_to_boxstream(docs)));
                 }
 
                 let named_outputs = read_pipeline.rows_positions().unwrap().clone();
@@ -412,8 +409,7 @@ impl EmbeddedTransaction {
                     }
                 }
 
-                let stream = futures::stream::iter(rows);
-                Ok(QueryAnswer::ConceptRowStream(header, Box::pin(stream)))
+                Ok(QueryAnswer::ConceptRowStream(header, vec_to_boxstream(rows)))
             }
             EmbeddedTransaction::Schema { .. } => {
                 Err(Error::Other(
@@ -545,4 +541,14 @@ fn convert_row_to_concept_row<'a>(
         .collect();
 
     ConceptRow::new(header, concepts, None)
+}
+
+/// Convert a Vec into the appropriate BoxStream type.
+/// In sync mode (no gRPC), BoxStream = Box<dyn Iterator + Send>, so we use the iterator directly.
+/// In async mode (with gRPC), BoxStream = Pin<Box<dyn Stream + Send>>, so we wrap via futures::stream::iter.
+fn vec_to_boxstream<T: Send + 'static>(vec: Vec<T>) -> BoxStream<'static, T> {
+    #[cfg(all(feature = "grpc", not(feature = "sync")))]
+    { box_stream(futures::stream::iter(vec)) }
+    #[cfg(any(not(feature = "grpc"), feature = "sync"))]
+    { box_stream(vec.into_iter()) }
 }
