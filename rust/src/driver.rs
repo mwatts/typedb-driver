@@ -499,6 +499,13 @@ impl TypeDBDriver {
     /// TypeDBDriver::new_embedded("/tmp/typedb-data")
     /// ```
     pub fn new_embedded(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Self::new_embedded_with_options(path, Default::default())
+    }
+
+    pub fn new_embedded_with_options(
+        path: impl AsRef<std::path::Path>,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
         use crate::embedded::embedded_backend::EmbeddedState;
 
         let data_directory = path.as_ref().to_owned();
@@ -512,9 +519,10 @@ impl TypeDBDriver {
             })?;
         }
 
-        let database_manager = database::database_manager::DatabaseManager::new_with_backend(
+        let database_manager = database::database_manager::DatabaseManager::new_with_backend_and_options(
                 &data_directory,
                 kv::KVBackend::Redb,
+                options,
             )
             .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
 
@@ -551,17 +559,16 @@ impl TypeDBDriver {
 #[cfg(all(feature = "embedded", not(feature = "grpc")))]
 impl TypeDBDriver {
     /// Creates a new embedded (in-process) TypeDB driver.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` -- The data directory path for the embedded database
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// TypeDBDriver::new_embedded("/tmp/typedb-data")
-    /// ```
     pub fn new_embedded(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Self::new_embedded_with_options(path, Default::default())
+    }
+
+    /// Creates a new embedded (in-process) TypeDB driver with custom options
+    /// for configuring background task intervals (checkpoint, statistics).
+    pub fn new_embedded_with_options(
+        path: impl AsRef<std::path::Path>,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
         use crate::embedded::embedded_backend::EmbeddedState;
 
         let data_directory = path.as_ref().to_owned();
@@ -575,9 +582,10 @@ impl TypeDBDriver {
             })?;
         }
 
-        let database_manager = database::database_manager::DatabaseManager::new_with_backend(
+        let database_manager = database::database_manager::DatabaseManager::new_with_backend_and_options(
                 &data_directory,
                 kv::KVBackend::Redb,
+                options,
             )
             .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
 
