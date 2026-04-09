@@ -141,7 +141,9 @@
 		optional = true
 
 	[dependencies.chrono]
-		workspace = true
+		features = ["alloc", "android-tzdata", "clock", "default", "iana-time-zone", "js-sys", "now", "oldtime", "serde", "std", "wasm-bindgen", "wasmbind", "winapi", "windows-link"]
+		version = ">=0.4.41, <0.4.42"
+		default-features = false
 
 	[dependencies.crossbeam]
 		features = ["alloc", "crossbeam-channel", "crossbeam-deque", "crossbeam-epoch", "crossbeam-queue", "default", "std"]
