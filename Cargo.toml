@@ -149,6 +149,9 @@
 # Local development overrides: when building from the thyra submodule layout,
 # these patches redirect git deps to the local typedb fork submodule.
 # External consumers of the driver (via git dep) do NOT see these patches.
+[patch."https://github.com/typedb/typeql"]
+	typeql = { path = "../typeql/rust" }
+
 [patch."https://github.com/mwatts/typedb"]
 	database = { path = "../typedb/database" }
 	kv = { path = "../typedb/kv" }
