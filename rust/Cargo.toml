@@ -250,8 +250,8 @@
 		default-features = false
 
 	[dependencies.typeql]
-		git = "https://github.com/typedb/typeql"
-		tag = "3.8.0"
+		git = "https://github.com/mwatts/typeql"
+		branch = "thyra"
 		optional = true
 		default-features = false
 
