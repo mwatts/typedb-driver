@@ -444,13 +444,13 @@ impl EmbeddedTransaction {
     pub fn rollback(&mut self) -> Result<()> {
         match self {
             EmbeddedTransaction::Schema { tx, .. } => {
-                if let Some(ref mut transaction) = tx {
+                if let Some(transaction) = tx {
                     transaction.rollback();
                 }
                 Ok(())
             }
             EmbeddedTransaction::Write { tx, .. } => {
-                if let Some(ref mut transaction) = tx {
+                if let Some(transaction) = tx {
                     transaction.rollback();
                 }
                 Ok(())
