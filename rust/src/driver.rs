@@ -615,6 +615,25 @@ impl TypeDBDriver {
         self.embedded_state.as_ref().map(|s| &s.database_manager)
     }
 
+    /// Create a consistent backup of the named database at `dest_path`.
+    ///
+    /// The destination directory will be created if it doesn't exist.
+    /// Safe to call while the database is serving reads and writes.
+    pub fn backup_database(
+        &self,
+        db_name: &str,
+        dest_path: impl AsRef<std::path::Path>,
+    ) -> Result<std::path::PathBuf> {
+        let state = self
+            .embedded_state
+            .as_ref()
+            .ok_or_else(|| Error::Other("backup_database requires embedded mode".into()))?;
+        state
+            .database_manager
+            .backup_database(db_name, dest_path.as_ref())
+            .map_err(|e| Error::Other(format!("{e:?}")))
+    }
+
     /// Insert a vector for an entity into a named vector index.
     ///
     /// Creates the index on first use with the given `dimension`.
