@@ -760,7 +760,7 @@ dependencies = [
  "encoding",
  "error",
  "ir",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "resource",
  "serde",
  "storage",
@@ -781,7 +781,7 @@ dependencies = [
  "encoding",
  "error",
  "iterator",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "lending_iterator",
  "paste",
  "primitive",
@@ -799,6 +799,8 @@ name = "concurrency"
 version = "0.0.0"
 dependencies = [
  "tokio",
+ "tokio-test",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1095,7 +1097,7 @@ dependencies = [
  "fail_point",
  "function",
  "ir",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "kv",
  "logger",
  "options",
@@ -1210,7 +1212,7 @@ version = "0.0.0"
 dependencies = [
  "error",
  "fail_point",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "logger",
  "lz4_flex",
  "resource",
@@ -1240,7 +1242,7 @@ dependencies = [
  "chrono-tz",
  "durability",
  "error",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "kv",
  "lending_iterator",
  "logger",
@@ -1364,7 +1366,7 @@ dependencies = [
  "error",
  "ir",
  "iterator",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "lending_iterator",
  "logger",
  "paste",
@@ -1383,7 +1385,7 @@ dependencies = [
 name = "fail_point"
 version = "0.0.0"
 dependencies = [
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "rand 0.8.6",
  "tracing",
 ]
@@ -1471,7 +1473,7 @@ dependencies = [
  "encoding",
  "error",
  "ir",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "primitive",
  "resource",
  "storage",
@@ -2301,7 +2303,7 @@ dependencies = [
  "durability",
  "encoding",
  "error",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "primitive",
  "regex",
  "storage",
@@ -3419,7 +3421,7 @@ dependencies = [
  "executor",
  "function",
  "ir",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "lending_iterator",
  "moka",
  "resource",
@@ -3719,7 +3721,7 @@ dependencies = [
 name = "resource"
 version = "0.0.0"
 dependencies = [
- "itertools 0.10.5",
+ "itertools 0.14.0",
 ]
 
 [[package]]
@@ -4142,7 +4144,6 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
- "indexmap 2.14.0",
  "itoa",
  "memchr",
  "serde",
@@ -4335,7 +4336,7 @@ dependencies = [
  "chrono",
  "cucumber",
  "futures",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "macro_rules_attribute",
  "regex",
  "serde_json",
@@ -4355,7 +4356,7 @@ dependencies = [
  "durability",
  "error",
  "fail_point",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "kv",
  "lending_iterator",
  "logger",
@@ -4806,7 +4807,6 @@ dependencies = [
  "bytes 1.11.1",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.6.3",
@@ -4858,6 +4858,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-test"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
+dependencies = [
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4866,6 +4877,7 @@ dependencies = [
  "bytes 1.11.1",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
@@ -5111,7 +5123,7 @@ dependencies = [
  "http 1.4.0",
  "insta",
  "ir",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "kv",
  "lending_iterator",
  "logger",
@@ -5144,7 +5156,7 @@ dependencies = [
 [[package]]
 name = "typedb-protocol"
 version = "0.0.0"
-source = "git+https://github.com/typedb/typedb-protocol?tag=3.7.0#3b75931f30f2b5cecf192515bb95071cd98a6e10"
+source = "git+https://github.com/mwatts/typedb-protocol?branch=thyra#25ab3fb02715062bd036f8b83908de92b106a202"
 dependencies = [
  "prost",
  "tonic",
@@ -5156,7 +5168,7 @@ name = "typedb_driver_clib"
 version = "0.0.0"
 dependencies = [
  "chrono",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "tracing",
  "tracing-subscriber",
  "typedb-driver",

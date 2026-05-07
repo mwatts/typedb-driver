@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use database::{
     database_manager::DatabaseManager as EngineDatabaseManager,
     query::{execute_schema_query, execute_write_query_in_write},
-    transaction::{TransactionRead, TransactionSchema, TransactionWrite},
+    transaction::{CommitIntent, TransactionRead, TransactionSchema, TransactionWrite},
     Database,
 };
 use executor::ExecutionInterrupt;
@@ -425,13 +425,15 @@ impl EmbeddedTransaction {
             EmbeddedTransaction::Schema { tx, .. } => {
                 let transaction = tx.take()
                     .ok_or_else(|| Error::Other("Schema transaction already consumed".to_string()))?;
-                let (_profile, result) = transaction.commit();
+                let (mut profile, finalise_result) = transaction.finalise();
+                let result = finalise_result.and_then(|intent| intent.commit(profile.commit_profile()));
                 result.map_err(|e| Error::Other(format!("Schema commit error: {e:?}")))
             }
             EmbeddedTransaction::Write { tx, .. } => {
                 let transaction = tx.take()
                     .ok_or_else(|| Error::Other("Write transaction already consumed".to_string()))?;
-                let (_profile, result) = transaction.commit();
+                let (mut profile, finalise_result) = transaction.finalise();
+                let result = finalise_result.and_then(|intent| intent.commit(profile.commit_profile()));
                 result.map_err(|e| Error::Other(format!("Write commit error: {e:?}")))
             }
             EmbeddedTransaction::Read { .. } => {

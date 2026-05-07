@@ -87,8 +87,8 @@
 
 	[dependencies.typedb-protocol]
 		features = []
-		git = "https://github.com/typedb/typedb-protocol"
-		tag = "3.7.0"
+		git = "https://github.com/mwatts/typedb-protocol"
+		branch = "thyra"
 		default-features = false
 		optional = true
 
