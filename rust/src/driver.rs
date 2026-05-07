@@ -506,6 +506,27 @@ impl TypeDBDriver {
         path: impl AsRef<std::path::Path>,
         options: database::database_manager::DatabaseManagerOptions,
     ) -> Result<Self> {
+        Self::new_embedded_with_backend_and_options(path, kv::KVBackend::Redb, options)
+    }
+
+    /// Creates an in-memory embedded TypeDB driver.
+    /// Data is not persisted — suitable for tests.
+    pub fn new_embedded_in_memory(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Self::new_embedded_in_memory_with_options(path, Default::default())
+    }
+
+    pub fn new_embedded_in_memory_with_options(
+        path: impl AsRef<std::path::Path>,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
+        Self::new_embedded_with_backend_and_options(path, kv::KVBackend::InMemory, options)
+    }
+
+    fn new_embedded_with_backend_and_options(
+        path: impl AsRef<std::path::Path>,
+        backend: kv::KVBackend,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
         use crate::embedded::embedded_backend::EmbeddedState;
 
         let data_directory = path.as_ref().to_owned();
@@ -521,7 +542,7 @@ impl TypeDBDriver {
 
         let database_manager = database::database_manager::DatabaseManager::new_with_backend_and_options(
                 &data_directory,
-                kv::KVBackend::Redb,
+                backend,
                 options,
             )
             .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
@@ -533,8 +554,7 @@ impl TypeDBDriver {
             fulltext_indices: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
 
-        // Create a minimal driver with embedded state.
-        // The gRPC fields are not used in embedded mode, but we need a valid BackgroundRuntime.
+        // gRPC fields unused in embedded mode, but struct requires valid BackgroundRuntime.
         let background_runtime = Arc::new(crate::connection::runtime::BackgroundRuntime::new()?);
         let server_manager =
             Arc::new(crate::connection::server::server_manager::ServerManager::new_embedded_placeholder(
@@ -569,6 +589,27 @@ impl TypeDBDriver {
         path: impl AsRef<std::path::Path>,
         options: database::database_manager::DatabaseManagerOptions,
     ) -> Result<Self> {
+        Self::new_embedded_with_backend_and_options(path, kv::KVBackend::Redb, options)
+    }
+
+    /// Creates an in-memory embedded TypeDB driver.
+    /// Data is not persisted — suitable for tests.
+    pub fn new_embedded_in_memory(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Self::new_embedded_in_memory_with_options(path, Default::default())
+    }
+
+    pub fn new_embedded_in_memory_with_options(
+        path: impl AsRef<std::path::Path>,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
+        Self::new_embedded_with_backend_and_options(path, kv::KVBackend::InMemory, options)
+    }
+
+    fn new_embedded_with_backend_and_options(
+        path: impl AsRef<std::path::Path>,
+        backend: kv::KVBackend,
+        options: database::database_manager::DatabaseManagerOptions,
+    ) -> Result<Self> {
         use crate::embedded::embedded_backend::EmbeddedState;
 
         let data_directory = path.as_ref().to_owned();
@@ -584,7 +625,7 @@ impl TypeDBDriver {
 
         let database_manager = database::database_manager::DatabaseManager::new_with_backend_and_options(
                 &data_directory,
-                kv::KVBackend::Redb,
+                backend,
                 options,
             )
             .map_err(|e| Error::Other(format!("Failed to create embedded DatabaseManager: {e:?}")))?;
